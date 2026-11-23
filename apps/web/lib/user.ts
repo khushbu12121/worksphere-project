@@ -9,7 +9,7 @@ export type Role =
 export const currentUser = {
   id: "user-001",
   name: "Khushbu Bansal",
-  role: "TEAM_MEMBER" as Role,
+  role: "PROJECT_MANAGER" as Role,
 };
 
 export const roleLabels: Record<Role, string> = {
