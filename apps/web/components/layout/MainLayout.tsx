@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import { currentUser, roleLabels } from "@/lib/user";
@@ -54,6 +54,18 @@ export default function MainLayout({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const closeSidebar = () => setIsSidebarOpen(false);
+
+  // Prevent background page scrolling while mobile sidebar is open.
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isSidebarOpen]);
 
   const layout =
     roleLayouts[currentUser.role] ?? roleLayouts.TEAM_MEMBER;

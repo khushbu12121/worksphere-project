@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import MainLayout from "@/components/layout/MainLayout";
 import { currentUser } from "@/lib/user";
 import { hasPermission } from "@/lib/permissions";
+import { fetchProjects, createProject } from "@/lib/projects-api";
 
 type Project = {
   id: number;
@@ -63,6 +64,22 @@ const priorityColors: Record<string, string> = {
   High: "bg-rose-500",
 };
 
+function formatDate(dateValue: string) {
+  // PostgreSQL DATE values may arrive as ISO timestamps.
+  // Convert to the browser's local date to avoid a one-day shift.
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return dateValue;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [search, setSearch] = useState("");
@@ -71,6 +88,9 @@ export default function ProjectsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [apiError, setApiError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -94,7 +114,58 @@ export default function ProjectsPage() {
     "CREATE_PROJECT"
   );
 
-  // Keyboard accessibility and focus management
+  // Load projects from the Express API and PostgreSQL.
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadProjects() {
+      try {
+        setIsLoading(true);
+        setApiError("");
+
+        const apiProjects = await fetchProjects();
+
+        if (!isActive) return;
+
+        const mappedProjects: Project[] = apiProjects.map((project) => ({
+          id: Number(project.id),
+          name: project.name,
+          description: project.description || "",
+          category: project.category,
+          progress: project.progress,
+          status: project.status,
+          due: formatDate(project.due_date),
+          color: priorityColors[project.priority] || "bg-blue-500",
+          priority: project.priority,
+        }));
+
+        setProjects(mappedProjects);
+      } catch (error) {
+        if (!isActive) return;
+
+        console.error("Unable to load projects:", error);
+
+        // Keep sample data only as a development fallback.
+        setApiError(
+          "Backend unavailable. Showing sample projects instead of database data."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    if (canViewProjects) {
+      loadProjects();
+    }
+
+    return () => {
+      isActive = false;
+    };
+  }, [canViewProjects]);
+
+  // Keyboard accessibility and focus management.
   useEffect(() => {
     if (!isModalOpen) return;
 
@@ -125,10 +196,7 @@ export default function ProjectsPage() {
 
         if (!first || !last) return;
 
-        if (
-          event.shiftKey &&
-          document.activeElement === first
-        ) {
+        if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last.focus();
         } else if (
@@ -143,10 +211,10 @@ export default function ProjectsPage() {
 
     document.addEventListener("keydown", handleKeyDown);
 
-   return () => {
-  document.removeEventListener("keydown", handleKeyDown);
-  createButton?.focus();
-};
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      createButton?.focus();
+    };
   }, [isModalOpen]);
 
   if (!canViewProjects) {
@@ -197,12 +265,25 @@ export default function ProjectsPage() {
     setSuccessMessage("");
   };
 
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      category: "",
+      startDate: "",
+      dueDate: "",
+      priority: "Medium",
+    });
+  };
+
   const closeModal = () => {
+    if (isSaving) return;
+
     setIsModalOpen(false);
     setFormError("");
   };
 
-  const handleCreateProject = (
+  const handleCreateProject = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
@@ -236,49 +317,56 @@ export default function ProjectsPage() {
       return;
     }
 
-    const newProject: Project = {
-      id: Date.now(),
-      name: name.trim(),
-      description: description.trim(),
-      category: category.trim(),
-      progress: 0,
-      status: "In Progress",
-      due: new Date(
-        `${dueDate}T00:00:00`
-      ).toLocaleDateString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-      }),
-      color: priorityColors[priority],
-      priority,
-    };
+    setIsSaving(true);
 
-    setProjects((previous) => [
-      newProject,
-      ...previous,
-    ]);
+    try {
+      const savedProject = await createProject({
+        name: name.trim(),
+        description: description.trim(),
+        category: category.trim(),
+        startDate,
+        dueDate,
+        priority: priority as "Low" | "Medium" | "High",
+      });
 
-    setFormData({
-      name: "",
-      description: "",
-      category: "",
-      startDate: "",
-      dueDate: "",
-      priority: "Medium",
-    });
+      const newProject: Project = {
+        id: Number(savedProject.id),
+        name: savedProject.name,
+        description: savedProject.description || "",
+        category: savedProject.category,
+        progress: savedProject.progress,
+        status: savedProject.status,
+        due: formatDate(savedProject.due_date),
+        color:
+          priorityColors[savedProject.priority] || "bg-blue-500",
+        priority: savedProject.priority,
+      };
 
-    setIsModalOpen(false);
+      setProjects((previous) => [
+        newProject,
+        ...previous,
+      ]);
 
-    setSuccessMessage(
-      "Project created successfully in this demo session!"
-    );
+      setApiError("");
+      setSuccessMessage("Project created successfully!");
+      resetForm();
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Project creation failed:", error);
+
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Unable to create project. Please try again."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <MainLayout>
       <div className="space-y-7">
-
         {/* Heading */}
         <section className="flex flex-col justify-between gap-4 sm:flex-row">
           <div>
@@ -307,6 +395,16 @@ export default function ProjectsPage() {
           )}
         </section>
 
+        {/* API Error */}
+        {apiError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          >
+            {apiError}
+          </div>
+        )}
+
         {/* Success Message */}
         {successMessage && (
           <div
@@ -325,13 +423,13 @@ export default function ProjectsPage() {
             [
               "In Progress",
               projects.filter(
-                (p) => p.status === "In Progress"
+                (project) => project.status === "In Progress"
               ).length,
             ],
             [
               "Completed",
               projects.filter(
-                (p) => p.status === "Completed"
+                (project) => project.status === "Completed"
               ).length,
             ],
           ].map(([label, value]) => (
@@ -339,9 +437,7 @@ export default function ProjectsPage() {
               key={label}
               className="rounded-2xl border border-slate-200 bg-white p-5"
             >
-              <p className="text-sm text-slate-500">
-                {label}
-              </p>
+              <p className="text-sm text-slate-500">{label}</p>
 
               <h2 className="mt-3 text-3xl font-bold text-slate-900">
                 {value}
@@ -356,9 +452,7 @@ export default function ProjectsPage() {
           aria-label="Search and filter projects"
         >
           <label className="flex-1">
-            <span className="sr-only">
-              Search projects
-            </span>
+            <span className="sr-only">Search projects</span>
 
             <input
               type="search"
@@ -386,94 +480,105 @@ export default function ProjectsPage() {
           </label>
         </section>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl bg-white p-8 text-center text-sm text-slate-500"
+          >
+            Loading projects...
+          </div>
+        )}
+
         {/* Project Cards */}
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Project list"
-        >
-          {filteredProjects.map((project) => (
-            <article
-              key={project.id}
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div
-                  className={`h-3 w-3 rounded-full ${project.color}`}
-                  aria-hidden="true"
-                />
-
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    project.status === "Completed"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-blue-50 text-blue-700"
-                  }`}
-                >
-                  {project.status}
-                </span>
-              </div>
-
-              <p className="mt-5 text-xs text-slate-400">
-                {project.category}
-              </p>
-
-              <h3 className="mt-2 text-lg font-bold text-slate-900">
-                {project.name}
-              </h3>
-
-              {project.description && (
-                <p className="mt-2 text-sm text-slate-500">
-                  {project.description}
-                </p>
-              )}
-
-              {project.priority && (
-                <p className="mt-2 text-xs text-slate-500">
-                  Priority: {project.priority}
-                </p>
-              )}
-
-              <div className="mt-6 flex justify-between text-sm">
-                <span className="text-slate-500">
-                  Progress
-                </span>
-
-                <span className="font-bold">
-                  {project.progress}%
-                </span>
-              </div>
-
-              <div
-                className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
-                role="progressbar"
-                aria-label={`${project.name} completion`}
-                aria-valuenow={project.progress}
-                aria-valuemin={0}
-                aria-valuemax={100}
+        {!isLoading && (
+          <section
+            className="grid gap-5 lg:grid-cols-2"
+            aria-label="Project list"
+          >
+            {filteredProjects.map((project) => (
+              <article
+                key={project.id}
+                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
               >
+                <div className="flex items-center justify-between">
+                  <div
+                    className={`h-3 w-3 rounded-full ${project.color}`}
+                    aria-hidden="true"
+                  />
+
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      project.status === "Completed"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-blue-50 text-blue-700"
+                    }`}
+                  >
+                    {project.status}
+                  </span>
+                </div>
+
+                <p className="mt-5 text-xs text-slate-400">
+                  {project.category}
+                </p>
+
+                <h3 className="mt-2 text-lg font-bold text-slate-900">
+                  {project.name}
+                </h3>
+
+                {project.description && (
+                  <p className="mt-2 text-sm text-slate-500">
+                    {project.description}
+                  </p>
+                )}
+
+                {project.priority && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Priority: {project.priority}
+                  </p>
+                )}
+
+                <div className="mt-6 flex justify-between text-sm">
+                  <span className="text-slate-500">Progress</span>
+
+                  <span className="font-bold">
+                    {project.progress}%
+                  </span>
+                </div>
+
                 <div
-                  className={`h-full rounded-full ${project.color}`}
-                  style={{
-                    width: `${project.progress}%`,
-                  }}
-                />
-              </div>
+                  className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
+                  role="progressbar"
+                  aria-label={`${project.name} completion`}
+                  aria-valuenow={project.progress}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className={`h-full rounded-full ${project.color}`}
+                    style={{
+                      width: `${project.progress}%`,
+                    }}
+                  />
+                </div>
 
-              <div className="mt-6 border-t border-slate-100 pt-4">
-                <p className="text-xs text-slate-400">
-                  Due date
-                </p>
+                <div className="mt-6 border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-400">
+                    Due date
+                  </p>
 
-                <p className="mt-1 text-sm font-semibold text-slate-700">
-                  {project.due}
-                </p>
-              </div>
-            </article>
-          ))}
-        </section>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">
+                    {project.due}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
 
         {/* Empty State */}
-        {filteredProjects.length === 0 && (
+        {!isLoading && filteredProjects.length === 0 && (
           <div
             className="rounded-2xl bg-white p-10 text-center"
             role="status"
@@ -522,6 +627,7 @@ export default function ProjectsPage() {
                 <button
                   type="button"
                   onClick={closeModal}
+                  disabled={isSaving}
                   aria-label="Close form"
                   className="rounded-lg px-3 py-1 text-xl text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
@@ -679,16 +785,18 @@ export default function ProjectsPage() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    disabled={isSaving}
+                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Cancel
                   </button>
 
                   <button
                     type="submit"
-                    className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    disabled={isSaving}
+                    className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Create Project
+                    {isSaving ? "Saving..." : "Create Project"}
                   </button>
                 </div>
               </form>

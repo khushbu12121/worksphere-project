@@ -14,51 +14,16 @@ type NavigationItem = {
 };
 
 const navigation: NavigationItem[] = [
-  {
-    name: "Overview",
-    href: "/",
-    icon: "▦",
-    permission: "VIEW_OVERVIEW",
-  },
-  {
-    name: "Projects",
-    href: "/projects",
-    icon: "▤",
-    permission: "VIEW_PROJECTS",
-  },
-  {
-    name: "My Tasks",
-    href: "/tasks",
-    icon: "✓",
-    permission: "VIEW_TASKS",
-  },
-  {
-    name: "Team",
-    href: "/team",
-    icon: "♙",
-    permission: "VIEW_TEAM",
-  },
-  {
-    name: "Analytics",
-    href: "/analytics",
-    icon: "▥",
-    permission: "VIEW_ANALYTICS",
-  },
+  { name: "Overview", href: "/", icon: "▦", permission: "VIEW_OVERVIEW" },
+  { name: "Projects", href: "/projects", icon: "▤", permission: "VIEW_PROJECTS" },
+  { name: "My Tasks", href: "/tasks", icon: "✓", permission: "VIEW_TASKS" },
+  { name: "Team", href: "/team", icon: "♙", permission: "VIEW_TEAM" },
+  { name: "Analytics", href: "/analytics", icon: "▥", permission: "VIEW_ANALYTICS" },
 ];
 
 const preferences: NavigationItem[] = [
-  {
-    name: "Settings",
-    href: "/settings",
-    icon: "⚙",
-    permission: "VIEW_SETTINGS",
-  },
-  {
-    name: "Help & Support",
-    href: "/help",
-    icon: "ⓘ",
-    permission: "VIEW_HELP",
-  },
+  { name: "Settings", href: "/settings", icon: "⚙", permission: "VIEW_SETTINGS" },
+  { name: "Help & Support", href: "/help", icon: "ⓘ", permission: "VIEW_HELP" },
 ];
 
 type SidebarProps = {
@@ -117,11 +82,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       <aside
         id="worksphere-sidebar"
         aria-label="Main sidebar"
-        className={`fixed inset-y-0 left-0 z-50 flex min-h-screen w-72 flex-col border-r border-slate-200 bg-white p-6 transition-transform duration-300 md:sticky md:top-0 md:z-20 md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-72 flex-col overflow-y-auto overscroll-contain border-r border-slate-200 bg-white p-6 transition-transform duration-300 md:sticky md:top-0 md:h-screen md:max-h-screen md:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-12 flex items-center justify-between gap-3">
+        <div className="mb-12 flex shrink-0 items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-2xl font-bold text-white">
               W
@@ -142,7 +107,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
-        <div>
+        <div className="shrink-0">
           <p className="mb-5 text-xs font-bold tracking-widest text-slate-400">
             WORKSPACE
           </p>
@@ -151,7 +116,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </nav>
         </div>
 
-        <div className="mt-12">
+        <div className="mt-12 shrink-0">
           <p className="mb-5 text-xs font-bold tracking-widest text-slate-400">
             PREFERENCES
           </p>
@@ -160,7 +125,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </nav>
         </div>
 
-        <div className="mt-auto border-t border-slate-200 pt-8">
+        <div className="mt-auto shrink-0 border-t border-slate-200 pt-8">
           <div className="flex items-center gap-3">
             <div
               className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-100 font-bold text-indigo-700"

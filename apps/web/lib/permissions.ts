@@ -68,5 +68,5 @@ export function hasPermission(
 }
 
 export function getPermissions(role: Role): Permission[] {
-  return rolePermissions[role];
+  return [...rolePermissions[role]];
 }

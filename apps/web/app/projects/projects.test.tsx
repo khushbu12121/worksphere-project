@@ -11,6 +11,10 @@ import type { ReactNode } from "react";
 
 import ProjectsPage from "./page";
 import { currentUser } from "@/lib/user";
+import {
+  fetchProjects,
+  createProject,
+} from "@/lib/projects-api";
 
 vi.mock("@/components/layout/MainLayout", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -25,20 +29,98 @@ vi.mock("@/lib/user", () => ({
   roleLabels: {},
 }));
 
+vi.mock("@/lib/projects-api", () => ({
+  fetchProjects: vi.fn(),
+  createProject: vi.fn(),
+}));
+
+const sampleProjects = [
+  {
+    id: 1,
+    name: "Website Redesign",
+    description: "Redesign company website",
+    category: "Design",
+    start_date: "2026-11-01",
+    due_date: "2026-11-25",
+    priority: "High" as const,
+    progress: 75,
+    status: "In Progress" as const,
+    created_at: "2026-11-01T10:00:00.000Z",
+  },
+  {
+    id: 2,
+    name: "Mobile App Development",
+    description: "Build mobile application",
+    category: "Development",
+    start_date: "2026-11-01",
+    due_date: "2026-12-02",
+    priority: "Medium" as const,
+    progress: 45,
+    status: "In Progress" as const,
+    created_at: "2026-11-01T10:00:00.000Z",
+  },
+  {
+    id: 3,
+    name: "Marketing Campaign",
+    description: "Marketing campaign",
+    category: "Marketing",
+    start_date: "2026-11-01",
+    due_date: "2026-11-23",
+    priority: "Low" as const,
+    progress: 90,
+    status: "In Progress" as const,
+    created_at: "2026-11-01T10:00:00.000Z",
+  },
+  {
+    id: 4,
+    name: "Database Optimization",
+    description: "Optimize database",
+    category: "Development",
+    start_date: "2026-11-01",
+    due_date: "2026-11-20",
+    priority: "High" as const,
+    progress: 100,
+    status: "Completed" as const,
+    created_at: "2026-11-01T10:00:00.000Z",
+  },
+];
+
 describe("Projects Page", () => {
   beforeEach(() => {
-    currentUser.role = "PROJECT_MANAGER";
-  });
+  vi.clearAllMocks();
+
+  currentUser.role = "PROJECT_MANAGER";
+
+  vi.mocked(fetchProjects).mockResolvedValue(sampleProjects);
+
+  vi.mocked(createProject).mockImplementation(async (payload) => ({
+    id: 5,
+    name: payload.name,
+    description: payload.description,
+    category: payload.category,
+    start_date: payload.startDate,
+    due_date: payload.dueDate,
+    priority: payload.priority,
+    progress: 0,
+    status: "In Progress",
+    created_at: "2026-11-23T10:00:00.000Z",
+  }));
+});
+
+  async function waitForProjectsToLoad() {
+    await screen.findByText("Website Redesign");
+  }
 
   // 1. Render Projects page
-  it("should render the Projects page and existing projects", () => {
+  it("should render the Projects page and existing projects", async () => {
     render(<ProjectsPage />);
 
     expect(
       screen.getByRole("heading", { name: "Projects" })
     ).toBeInTheDocument();
 
-    expect(screen.getByText("Website Redesign")).toBeInTheDocument();
+    await waitForProjectsToLoad();
+
     expect(screen.getByText("Mobile App Development")).toBeInTheDocument();
   });
 
@@ -93,11 +175,15 @@ describe("Projects Page", () => {
       screen.getByRole("button", { name: /^create project$/i })
     );
 
-    expect(screen.getByText("WorkSphere Testing")).toBeInTheDocument();
+    expect(
+      await screen.findByText("WorkSphere Testing")
+    ).toBeInTheDocument();
 
     expect(screen.getByRole("status")).toHaveTextContent(
       "Project created successfully"
     );
+
+    expect(createProject).toHaveBeenCalledTimes(1);
   });
 
   // 4. Reject whitespace-only project name
@@ -132,6 +218,8 @@ describe("Projects Page", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Please fill in all required fields."
     );
+
+    expect(createProject).not.toHaveBeenCalled();
   });
 
   // 5. Hide Create Project button for Team Members
@@ -151,6 +239,8 @@ describe("Projects Page", () => {
 
     render(<ProjectsPage />);
 
+    await waitForProjectsToLoad();
+
     await user.type(
       screen.getByRole("searchbox", { name: /search projects/i }),
       "Website"
@@ -168,6 +258,8 @@ describe("Projects Page", () => {
     const user = userEvent.setup();
 
     render(<ProjectsPage />);
+
+    await waitForProjectsToLoad();
 
     await user.selectOptions(
       screen.getByRole("combobox", {
@@ -188,6 +280,8 @@ describe("Projects Page", () => {
     const user = userEvent.setup();
 
     render(<ProjectsPage />);
+
+    await waitForProjectsToLoad();
 
     await user.type(
       screen.getByRole("searchbox", { name: /search projects/i }),
@@ -272,5 +366,25 @@ describe("Projects Page", () => {
     await waitFor(() => {
       expect(createButton).toHaveFocus();
     });
+  });
+
+  // 13. Due date minimum should follow the selected start date
+  it("should set the minimum due date equal to the selected start date", async () => {
+    const user = userEvent.setup();
+
+    render(<ProjectsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: /new project/i })
+    );
+
+    const startDate = screen.getByLabelText(/start date/i);
+    const dueDate = screen.getByLabelText(/due date/i);
+
+    fireEvent.change(startDate, {
+      target: { value: "2026-11-30" },
+    });
+
+    expect(dueDate).toHaveAttribute("min", "2026-11-30");
   });
 });
